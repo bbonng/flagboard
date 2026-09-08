@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>공간 작전판 — 플래그풋볼 5v5</title>
+<style>
+:root{
+  --board:#f5f6f2; --panel:#ffffff; --line:#d9ddd3; --ink:#1e2a22; --ink-2:#5b6a5f; --ink-3:#8d9a90;
+  --turf:#3a7a49; --turf-d:#316a3f; --chalk:#f2f4ea;
+  --off:#ff7a1a; --off-d:#c75a06; --def:#2f6fe0; --def-d:#1f4fa8;
+  --open:#2f9a52; --tight:#d69b12; --shut:#c9422f; --ball:#7a4a1e;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,sans-serif;background:var(--board);color:var(--ink);font-size:14px;line-height:1.45;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--def);outline-offset:2px}
+
+header{display:flex;align-items:baseline;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:18px;font-weight:800;letter-spacing:-.5px;white-space:nowrap}
+header .claim{font-size:13px;color:var(--ink-2)}
+header .gear{margin-left:auto;font-size:18px;color:var(--ink-3);padding:2px 6px}
+
+#app{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px;padding:12px;height:calc(100% - 44px)}
+#fieldWrap{position:relative;background:var(--turf);border-radius:14px;overflow:hidden;min-height:360px;touch-action:none}
+#field{width:100%;height:100%;display:block;touch-action:none}
+#hint{position:absolute;left:12px;top:10px;background:rgba(30,42,34,.78);color:var(--chalk);padding:6px 12px;border-radius:20px;font-size:13px;pointer-events:none;max-width:70%}
+#clock{position:absolute;right:12px;top:10px;background:rgba(30,42,34,.78);color:var(--chalk);padding:6px 12px;border-radius:20px;font-size:13px;font-variant-numeric:tabular-nums;pointer-events:none}
+
+#side{display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.box h2{font-size:13px;font-weight:700;color:var(--ink-2);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.box h2 .r{margin-left:auto;font-weight:500;color:var(--ink-3)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:7px 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;font-weight:600;font-size:13px}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip.def.on{background:var(--def);border-color:var(--def)}
+.chip small{display:block;font-weight:400;font-size:11px;opacity:.75;line-height:1.2}
+
+.grid{display:grid;grid-template-columns:52px repeat(4,1fr);gap:4px;align-items:stretch}
+.grid .hd{font-size:11px;color:var(--ink-3);text-align:center;padding:4px 0;align-self:end}
+.grid .rh{font-size:11px;color:var(--ink-3);display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2}
+.cell{border:1.5px solid var(--line);border-radius:10px;padding:4px 2px 5px;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:58px;background:#fff}
+.cell svg{width:34px;height:30px}
+.cell span{font-size:12px;font-weight:700}
+.cell.on{border-color:var(--off);background:#fff3e8}
+.cell.empty{border-style:dashed;opacity:.35;pointer-events:none}
+.cell:disabled{opacity:.4}
+.who{font-size:13px;margin-bottom:8px;color:var(--ink-2)}
+.who b{color:var(--off-d)}
+
+.row{display:flex;gap:8px;align-items:center}
+.btn{padding:10px 14px;border-radius:10px;font-weight:700;font-size:14px;background:#eef0ea}
+.btn.primary{background:var(--ink);color:#fff;flex:1}
+.btn.primary:disabled{opacity:.45}
+.btn.small{padding:7px 10px;font-size:13px}
+input[type=range]{flex:1;accent-color:var(--ink)}
+.mode{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
+.mode button{flex:1;padding:8px;font-weight:700;font-size:13px}
+.mode button.on{background:var(--ink);color:#fff}
+
+#result{display:none}
+#result .big{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.1}
+#result .big.open{color:var(--open)} #result .big.tight{color:var(--tight)} #result .big.shut{color:var(--shut)}
+#result .sub{font-size:13px;color:var(--ink-2);margin-top:3px}
+#ask{margin-top:10px;padding:10px 12px;background:#f2f4ee;border-left:4px solid var(--def);border-radius:6px;font-size:13.5px;line-height:1.5}
+
+#log{display:flex;flex-direction:column;gap:5px}
+.try{display:flex;gap:8px;font-size:12.5px;padding:6px 8px;border-radius:8px;background:#f7f8f4;align-items:baseline}
+.try .f{font-weight:700;color:var(--def-d);min-width:56px}
+.try .s{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.try .s.open{color:var(--open)} .try .s.tight{color:var(--tight)} .try .s.shut{color:var(--shut)}
+.empty-note{font-size:13px;color:var(--ink-3)}
+
+#settings{display:none;position:fixed;inset:0;background:rgba(30,42,34,.45);align-items:center;justify-content:center;z-index:9}
+#settings .sheet{background:#fff;border-radius:14px;padding:18px;width:min(92vw,380px)}
+#settings label{display:block;font-size:13px;color:var(--ink-2);margin:10px 0 4px}
+#settings input[type=number]{width:100%;padding:8px;border:1.5px solid var(--line);border-radius:8px;font:inherit}
+#settings p{font-size:12.5px;color:var(--ink-3);margin-top:8px;line-height:1.5}
+
+@media (max-width:820px){
+  #app{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;overflow:visible}
+  #fieldWrap{height:118vw;min-height:300px}
+  #clock{top:auto;bottom:10px}
+  body{overflow-y:auto}
+}
+@media (prefers-reduced-motion:reduce){ * {transition:none !important} }
+</style>
+</head>
+<body>
+<header>
+  <h1>공간 작전판</h1>
+  <span class="claim">수비는 늦게 반응한다. 그 지연이 공간이다.</span>
+  <button class="gear" id="btnGear" aria-label="설정">⚙</button>
+</header>
+
+<div id="app">
+  <div id="fieldWrap">
+    <canvas id="field"></canvas>
+    <div id="hint">선수를 누르고 라우트를 고르세요</div>
+    <div id="clock">0.0초</div>
+  </div>
+
+  <aside id="side">
+    <section class="box">
+      <h2>수비 대형 <span class="r" id="defNote"></span></h2>
+      <div class="chips" id="defChips"></div>
+    </section>
+
+    <section class="box">
+      <h2>공격 <span class="r">선수는 끌어서 옮길 수 있어요</span></h2>
+      <div class="chips" id="offChips" style="margin-bottom:10px"></div>
+      <div class="mode" id="modeSel">
+        <button class="on" data-m="pass">패스 플레이</button>
+        <button data-m="run">런 플레이</button>
+      </div>
+    </section>
+
+    <section class="box" id="routeBox">
+      <div class="who" id="who">선수를 먼저 누르세요</div>
+      <div class="grid" id="routeGrid"></div>
+    </section>
+
+    <section class="box" id="runBox" style="display:none">
+      <div class="who" id="runWho">선수를 누르세요</div>
+      <div class="row" style="margin-bottom:8px">
+        <div class="mode" id="roleBtns" style="flex:1">
+          <button data-r="">공 없음</button><button data-r="fake">주는 척</button><button data-r="real">공 주기</button>
+        </div>
+        <button class="btn small" id="btnClearPath">길 지우기</button>
+      </div>
+      <div class="empty-note" id="flowNote" style="line-height:1.5"></div>
+    </section>
+
+    <section class="box">
+      <div class="row" style="margin-bottom:8px">
+        <button class="btn primary" id="btnSnap">스냅</button>
+        <button class="btn" id="btnReset">처음으로</button>
+      </div>
+      <div class="row">
+        <span style="font-size:12px;color:var(--ink-3)">시간</span>
+        <input type="range" id="scrub" min="0" max="500" value="0" step="1" aria-label="시간">
+      </div>
+      <div class="empty-note" style="margin-top:6px" id="passNote">스냅 후 시간을 멈추고 리시버를 누르면 그 순간 던집니다</div>
+    </section>
+
+    <section class="box" id="result">
+      <div class="big" id="resBig">—</div>
+      <div class="sub" id="resSub"></div>
+      <div id="ask"></div>
+    </section>
+
+    <section class="box">
+      <h2>시도 기록 <span class="r" id="logCount"></span></h2>
+      <div id="log"><div class="empty-note">아직 던진 적이 없어요</div></div>
+    </section>
+  </aside>
+</div>
+
+<div id="settings">
+  <div class="sheet">
+    <h2 style="font-size:16px;font-weight:800">교사 설정</h2>
+    <label for="inpRush">러셔가 QB에 닿는 시간 (초)</label>
+    <input type="number" id="inpRush" step="0.1" min="1" max="6">
+    <p>실제 수업 경기에서 7야드 러셔가 QB를 잡는 시간을 재서 맞추세요. 수비 반응 지연(0.3초)·속도·방향전환 감속은 고정이며 학생에게 보이지 않습니다.</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn" id="btnClearLog">기록 지우기</button>
+      <button class="btn primary" id="btnCloseSet" style="flex:0 0 auto">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   규칙 (학생에게는 안 보임)
+   ========================================================= */
+const R = {
+  speed: 6.2,        // yd/s, 공격·수비 동일
+  lag: 0.30,         // s, 수비 반응 지연
+  cutAngle: 60,      // deg, 이 이상 꺾으면
+  cutSlow: 0.5,      // 속도 배율
+  cutDur: 0.40,      // s, 감속 지속
+  cushion: 2.5,        // yd, 맨 수비 출발 간격
+  front: 2.2,        // yd, 맨 수비가 리시버 앞을 지키는 여유
+  runReact: 0.8,     // s, 맨 수비가 런을 알아채는 시간
+  dt: 0.05, T: 5.0,
+  mesh: 2.5,         // yd, QB와 이 안에서 만나야 공을 주고받음
+  grab: 0.9,         // yd, 플래그 잡히는 거리
+  lead: 0.6,         // s, 공 가진 사람은 이만큼 앞질러 잡으러 감
+  fool: [0.5, 10],   // 속는 시간 = 0.5초 + (QB까지 거리 / 10)초, 최대 2초
+  rushArrive: +(localStorage.getItem('sb.rush') || 2.5)
+};
+const FIELD = { xMin:-15, xMax:15, yMin:-9, yMax:31 }; // yd, y=0 스크리미지
+
+/* 라우트: 오른쪽 선수 기준 (x+ = 바깥). 왼쪽 선수는 자동 반전 */
+const ROUTES = {
+  slant:  {n:'슬랜트',  pts:[[0,3],[-7,10]]},
+  flat:   {n:'플랫',    pts:[[0,1],[9,3]]},
+  hitch:  {n:'히치',    pts:[[0,6],[1,4]]},
+  drag:   {n:'드래그',  pts:[[0,3],[-16,4.5]]},
+  out:    {n:'아웃',    pts:[[0,10],[9,10]]},
+  curl:   {n:'컬',      pts:[[0,12],[-1.5,9]]},
+  post:   {n:'포스트',  pts:[[0,12],[-9,23]]},
+  corner: {n:'코너',    pts:[[0,12],[8,23]]},
+  go:     {n:'고',      pts:[[0,29]]},
+  comeback:{n:'컴백',   pts:[[0,16],[2.5,12]]},
+  outup:  {n:'아웃앤업',pts:[[0,7],[5,7],[5,28]]},
+  slugo:  {n:'슬러고',  pts:[[0,3],[-4,7],[-4,28]]},
+};
+const GRID = [ // [행 이름, [안쪽, 바깥, 직진, 돌아오기]]
+  ['짧음', ['slant','flat',null,'hitch']],
+  ['중간', ['drag','out',null,'curl']],
+  ['깊음', ['post','corner','go','comeback']],
+  ['속임수',['slugo','outup',null,null]],
+];
+
+/* 공격 진형 */
+const OFF_SETS = {
+  spread:{n:'스프레드', p:{C:[0,0], QB:[0,-5], W1:[-12,0], W2:[12,0], W3:[6,0]}},
+  trips: {n:'트립스',   p:{C:[0,0], QB:[0,-5], W1:[12,0],  W2:[8,-1], W3:[4,0]}},
+  bunch: {n:'번치',     p:{C:[0,0], QB:[0,-5], W1:[9,0],   W2:[11,-1.5], W3:[13,0]}},
+};
+/* 수비 대형: 러셔 제외 커버 인원 4 (블리츠만 3) */
+const DEFS = {
+  '2-2':   {n:'2-2', note:'짧은 존 2 + 깊은 존 2', rush:[[0,7]], cov:[
+    {t:'zone',home:[-7,5], z:[-15,0,0,10]}, {t:'zone',home:[7,5], z:[0,15,0,10]},
+    {t:'zone',home:[-7,14],z:[-15,0,10,31]},{t:'zone',home:[7,14], z:[0,15,10,31]} ]},
+  '3-1':   {n:'3-1', note:'앞 3 + 세이프티 1', rush:[[0,7]], cov:[
+    {t:'zone',home:[-10,5],z:[-15,-5,0,12]},{t:'zone',home:[0,5], z:[-5,5,0,12]},
+    {t:'zone',home:[10,5], z:[5,15,0,12]},  {t:'zone',home:[0,17],z:[-15,15,12,31]} ]},
+  '4across':{n:'4 어크로스', note:'4명 일렬, 골라인용', rush:[[0,7]], cov:[
+    {t:'zone',home:[-11,6],z:[-15,-7.5,0,31]},{t:'zone',home:[-4,6],z:[-7.5,0,0,31]},
+    {t:'zone',home:[4,6],  z:[0,7.5,0,31]},   {t:'zone',home:[11,6],z:[7.5,15,0,31]} ]},
+  'man':   {n:'맨 락', note:'리시버 3 맨마킹 + 세이프티', rush:[[0,7]], cov:[
+    {t:'man'},{t:'man'},{t:'man'}, {t:'zone',home:[0,17],z:[-15,15,12,31]} ]},
+  'blitz': {n:'블리츠', note:'러셔 2, 커버 3', rush:[[-3,7],[3,7]], cov:[
+    {t:'zone',home:[0,5],  z:[-6,6,0,12]},
+    {t:'zone',home:[-8,13],z:[-15,0,0,31]},{t:'zone',home:[8,13],z:[0,15,0,31]} ]},
+};
+
+/* =========================================================
+   상태
+   ========================================================= */
+const S = {
+  defKey:'2-2', offKey:'spread', mode:'pass',
+  off:{},           // id -> {x,y,route,label}
+  paths:{}, roles:{},   // id -> [[x,y],...] / 'fake'|'real'
+  selected:null,
+  sim:null,         // {frames:[{off:{id:[x,y]},def:[[x,y]]}], ...}
+  t:0, playing:false, raf:0,
+  pass:null,        // {rid, t}
+  log: JSON.parse(localStorage.getItem('sb.log')||'[]'),
+};
+const ELIG = ['C','W1','W2','W3']; // 스냅 후 리시버가 되는 선수
+
+function loadOffSet(k){
+  S.offKey=k; S.off={};
+  for(const [id,[x,y]] of Object.entries(OFF_SETS[k].p)) S.off[id]={x,y,route:null};
+  S.paths={}; S.roles={}; S.selected=null; clearSim();
+}
+function clearSim(){ S.sim=null; S.t=0; S.pass=null; stopPlay(); scrub.value=0; result.style.display='none'; }
+
+/* =========================================================
+   시뮬레이션
+   ========================================================= */
+function mirror(id){ return S.off[id].x < 0 ? -1 : 1; }
+function routeAbs(id){
+  const p=S.off[id]; if(!p.route) return [[p.x,p.y]];
+  const m=mirror(id);
+  return [[p.x,p.y], ...ROUTES[p.route].pts.map(([dx,dy])=>[clamp(p.x+dx*m,FIELD.xMin+.5,FIELD.xMax-.5), p.y+dy])];
+}
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function dist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
+
+class Mover{ // 목표를 향해 같은 속도로, 급하게 꺾으면 잠깐 느려짐
+  constructor(x,y,speed){ this.p=[x,y]; this.v=speed; this.h=null; this.slowUntil=-1; this.hist=[]; }
+  step(target,t,dt){
+    this.hist.push([t,this.p[0],this.p[1]]);
+    const d=dist(this.p,target); if(d<1e-3) return;
+    const dir=[(target[0]-this.p[0])/d,(target[1]-this.p[1])/d];
+    if(this.h){ const dot=clamp(dir[0]*this.h[0]+dir[1]*this.h[1],-1,1);
+      if(Math.acos(dot)*180/Math.PI>R.cutAngle) this.slowUntil=t+R.cutDur; }
+    const sp=this.v*(t<this.slowUntil?R.cutSlow:1);
+    const m=Math.min(d,sp*dt);
+    this.p=[this.p[0]+dir[0]*m,this.p[1]+dir[1]*m]; this.h=dir;
+  }
+  at(tPast){ // 과거 위치 (반응 지연용)
+    if(!this.hist.length) return this.p;
+    for(let i=this.hist.length-1;i>=0;i--){ if(this.hist[i][0]<=tPast) return [this.hist[i][1],this.hist[i][2]]; }
+    return [this.hist[0][1],this.hist[0][2]];
+  }
+}
+class PathRunner extends Mover{ // 정해진 길을 따라감
+  constructor(pts,speed){ super(pts[0][0],pts[0][1],speed); this.pts=pts; this.i=1; }
+  step(t,dt){ if(this.i>=this.pts.length){ this.hist.push([t,...this.p]); return; }
+    super.step(this.pts[this.i],t,dt); if(dist(this.p,this.pts[this.i])<0.05) this.i++; }
+}
+
+function movePts(id){ const p=S.off[id]; if(S.mode==='run' && S.paths[id]&&S.paths[id].length) return [[p.x,p.y],...S.paths[id]]; return routeAbs(id); }
+function meshTime(id){ // 선수가 QB 옆(mesh 거리 안)에 처음 닿는 시간, 없으면 null
+  const m=new PathRunner(movePts(id),R.speed), qb=[S.off.QB.x,S.off.QB.y];
+  for(let t=0;t<=R.T;t+=R.dt){ if(dist(m.p,qb)<=R.mesh && t>0.15) return +t.toFixed(2); m.step(t,R.dt); } return null; }
+function ballEvents(){ // 스냅 후 공이 오가는 순간들 (동선에서 계산)
+  if(S.mode!=='run') return {events:[],warn:[]};
+  const ev=[],warn=[];
+  for(const [id,role] of Object.entries(S.roles)){ if(!role) continue; const t=meshTime(id);
+    if(t==null){ warn.push(`${labelOf(id)}는 QB 옆 ${R.mesh}야드 안을 지나야 공을 받을 수 있어요`); continue; } ev.push({t,pid:id,fake:role==='fake'}); }
+  ev.sort((a,b)=>a.t-b.t);
+  const ri=ev.findIndex(e=>!e.fake); if(ri>=0){ const late=ev.slice(ri+1).filter(e=>e.fake); if(late.length) warn.push(`${late.map(e=>labelOf(e.pid)).join(', ')}의 주는 척은 진짜 핸드오프보다 늦어서 효과가 없어요`); }
+  return {events: ri>=0 ? ev.slice(0,ri+1) : ev, warn};
+}
+
+function simulate(){
+  const D=DEFS[S.defKey], isRun=S.mode==='run';
+  const {events}=ballEvents();
+  const realEv=events.find(e=>!e.fake)||null;
+  const off={}, receivers=[];
+  for(const id of Object.keys(S.off)){ const p=S.off[id];
+    off[id]=new PathRunner(id==='QB'?[[p.x,p.y]]:movePts(id),R.speed); if(ELIG.includes(id)) receivers.push(id); }
+  const qb=S.off.QB, qbP=[qb.x,qb.y];
+  const holderAt=t=> (realEv && t>=realEv.t-1e-6) ? realEv.pid : 'QB';
+
+  const manCount=D.cov.filter(c=>c.t==='man').length;
+  const order=[...receivers].filter(r=>r!=='C').sort((a,b)=>Math.abs(S.off[b].x)-Math.abs(S.off[a].x)); if(manCount>3) order.push('C');
+  const mk=(x,y,sp)=>({m:new Mover(x,y,sp), belief:'QB', since:0, discoverAt:Infinity, fooled:false});
+  const def=D.cov.map(c=>{ if(c.t==='man'){ const rid=order.shift(); const rp=S.off[rid]; return {t:'man',rid,...mk(rp.x,rp.y+R.cushion,R.speed)}; }
+    return {t:'zone',z:c.z,home:c.home,...mk(c.home[0],c.home[1],R.speed)}; });
+  const rushSpeed = dist([0,7],qbP) / R.rushArrive;
+  const rush=D.rush.map(([x,y])=>({t:'rush',...mk(x,y,rushSpeed)}));
+  const all=[...def,...rush];
+
+  let evI=0, tackleT=null, sackT=null, gain=null, fooledAtHand=0;
+  const frames=[];
+  for(let t=0;t<=R.T+1e-9;t+=R.dt){
+    // 공 사건 처리: 수비마다 "공이 누구한테 있다고 믿는지" 갱신
+    while(evI<events.length && events[evI].t<=t+1e-9){ const e=events[evI++];
+      for(const d of all){ const fooled = d.fooled;
+        if(e.fake){ if(!fooled){ d.belief=e.pid; d.since=t; d.discoverAt=t+clamp(R.fool[0]+dist(d.m.p,qbP)/R.fool[1],0.5,2.0); d.fooled=true; } }
+        else { if(!fooled){ d.belief=e.pid; d.since=t; } } }
+      if(!e.fake) fooledAtHand = all.filter(d=>d.fooled).length;
+    }
+    for(const d of all){ if(t>=d.discoverAt){ d.belief=holderAt(t); d.since=t; d.discoverAt=Infinity; d.fooled=false; } }
+
+    const holder=holderAt(t);
+    frames.push({ off:Object.fromEntries(Object.entries(off).map(([id,m])=>[id,[...m.p]])),
+                  def:def.map(d=>[...d.m.p]), rush:rush.map(d=>[...d.m.p]),
+                  belief:all.map(d=>d.belief), holder, fooled:all.map(d=>d.belief!==holder) });
+
+    // 플래그·색: 공 가진 사람에게 수비가 닿으면 멈춤
+    if(tackleT==null && sackT==null){ const hp=holder==='QB'?qbP:off[holder].p;
+      if(all.some(d=>dist(d.m.p,hp)<R.grab)){ if(holder==='QB'){ sackT=t; } else { tackleT=t; gain=+hp[1].toFixed(1); } } }
+    const frozen = tackleT!=null;
+    if(!frozen) for(const m of Object.values(off)) m.step(t,R.dt);
+    if(frozen) continue;
+
+    const tl=t-R.lag;
+    const carrierLP = d => { if(d.belief==='QB') return qbP; // 공 가진(것 같은) 사람은 앞질러 잡으러 간다: 0.6초 뒤 위치를 노림
+      const m=off[d.belief], p1=m.at(tl), p0=m.at(tl-0.2); const v=[(p1[0]-p0[0])/0.2,(p1[1]-p0[1])/0.2];
+      return [clamp(p1[0]+v[0]*R.lead,FIELD.xMin,FIELD.xMax), p1[1]+v[1]*R.lead]; };
+    for(const d of def){
+      let target;
+      if(d.t==='man'){
+        const chase = d.belief!=='QB' && d.belief!==d.rid && (t-d.since)>R.runReact;
+        if(chase) target=carrierLP(d);
+        else { const lp=off[d.rid].at(tl); const ty=lp[1]+R.front;
+          target=[lp[0], ty >= d.m.p[1] ? ty : (d.m.p[1]-ty > R.front ? ty : d.m.p[1])]; }
+      } else {
+        const [x0,x1,y0,y1]=d.z; let best=null,bd=1e9;
+        if(d.belief!=='QB'){ const lp=carrierLP(d); const near = lp[0]>=x0-3&&lp[0]<=x1+3&&lp[1]>=y0-5&&lp[1]<=y1;
+          if(lp[1]>-0.5 || near){ best=lp; bd=-1; } }
+        if(!best) for(const rid of receivers){ const lp=off[rid].at(tl);
+          if(lp[0]>=x0&&lp[0]<=x1&&lp[1]>=y0&&lp[1]<=y1){ const dd=dist(d.m.p,lp); if(dd<bd){bd=dd;best=lp;} } }
+        target = best ? (bd<0 ? best : [clamp(best[0],x0,x1), clamp(best[1]+R.front,y0,y1)]) : d.home;
+      }
+      d.m.step(target,t,R.dt);
+    }
+    for(const d of rush) d.m.step(carrierLP(d),t,R.dt);
+  }
+  S.sim={frames,def,receivers,isRun,realEv,events,tackleT,sackT,gain,fooledAtHand,rushArrive:R.rushArrive};
+}
+function frameAt(t){ const i=clamp(Math.round(t/R.dt),0,S.sim.frames.length-1); return S.sim.frames[i]; }
+function separation(rid,t){ // 가장 가까운 커버 수비수까지 거리, 앞/뒤
+  const f=frameAt(t), rp=f.off[rid]; let bd=1e9,bi=-1;
+  f.def.forEach((dp,i)=>{ const d=dist(rp,dp); if(d<bd){bd=d;bi=i;} });
+  f.rush.forEach(dp=>{ const d=dist(rp,dp); if(d<bd){bd=d;bi=-2;} });
+  return {d:bd, ahead: bi>=0 ? f.def[bi][1] < rp[1] : false, who:bi};
+}
+
+/* =========================================================
+   그리기
+   ========================================================= */
+const cv=document.getElementById('field'), ctx=cv.getContext('2d');
+let W=0,H=0,SC=1,OX=0,OY=0;
+function resize(){ const r=cv.parentElement.getBoundingClientRect(); const dpr=window.devicePixelRatio||1;
+  W=r.width; H=r.height; cv.width=W*dpr; cv.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  const fw=FIELD.xMax-FIELD.xMin, fh=FIELD.yMax-FIELD.yMin;
+  SC=Math.min(W/fw, H/fh); OX=(W-fw*SC)/2; OY=(H-fh*SC)/2; draw(); }
+const X=x=>OX+(x-FIELD.xMin)*SC, Y=y=>OY+(FIELD.yMax-y)*SC;
+const invX=px=>(px-OX)/SC+FIELD.xMin, invY=py=>FIELD.yMax-(py-OY)/SC;
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // 필드
+  ctx.fillStyle='#3a7a49'; ctx.fillRect(X(FIELD.xMin),Y(FIELD.yMax),(FIELD.xMax-FIELD.xMin)*SC,(FIELD.yMax-FIELD.yMin)*SC);
+  ctx.fillStyle='#316a3f'; for(let y=FIELD.yMin;y<FIELD.yMax;y+=10) if(((y+FIELD.yMin)/10)%2===0) ctx.fillRect(X(FIELD.xMin),Y(y+10),(FIELD.xMax-FIELD.xMin)*SC,10*SC);
+  ctx.strokeStyle='rgba(242,244,234,.55)'; ctx.lineWidth=1;
+  for(let y=-5;y<=30;y+=5){ ctx.beginPath(); ctx.moveTo(X(FIELD.xMin),Y(y)); ctx.lineTo(X(FIELD.xMax),Y(y)); ctx.stroke();
+    ctx.fillStyle='rgba(242,244,234,.6)'; ctx.font=`${Math.max(10,SC*1.1)}px sans-serif`; ctx.fillText(y>0?y:'',X(FIELD.xMin)+4,Y(y)-3); }
+  ctx.strokeStyle='#f2f4ea'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(X(FIELD.xMin),Y(0)); ctx.lineTo(X(FIELD.xMax),Y(0)); ctx.stroke();
+  ctx.fillStyle='rgba(242,244,234,.8)'; ctx.font=`bold ${Math.max(11,SC*1.2)}px sans-serif`; ctx.fillText('스크리미지 라인',X(FIELD.xMin)+6,Y(0)+SC*1.4);
+
+  const snapped=!!S.sim, f=snapped?frameAt(S.t):null;
+  const D=DEFS[S.defKey];
+
+  // 존 구역 (스냅 전에만 살짝)
+  if(!snapped){ D.cov.forEach(c=>{ if(c.t!=='zone') return; const [x0,x1,y0,y1]=c.z;
+    ctx.fillStyle='rgba(47,111,224,.10)'; ctx.strokeStyle='rgba(47,111,224,.35)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.fillRect(X(x0),Y(y1),(x1-x0)*SC,(y1-y0)*SC); ctx.strokeRect(X(x0),Y(y1),(x1-x0)*SC,(y1-y0)*SC); ctx.setLineDash([]); }); }
+
+  // 동선
+  for(const id of ELIG){ const pts=movePts(id); if(pts.length<2) continue;
+    const role=S.mode==='run'?S.roles[id]:null;
+    ctx.strokeStyle= role==='real' ? '#ffe28a' : role==='fake' ? '#ffb3a0' : 'rgba(255,255,255,.85)'; ctx.lineWidth=2.5; ctx.setLineDash(snapped?[]:[6,5]);
+    ctx.beginPath(); ctx.moveTo(X(pts[0][0]),Y(pts[0][1])); pts.slice(1).forEach(q=>ctx.lineTo(X(q[0]),Y(q[1]))); ctx.stroke(); ctx.setLineDash([]);
+    const a=pts[pts.length-2], b=pts[pts.length-1]; arrow(X(a[0]),Y(a[1]),X(b[0]),Y(b[1]),ctx.strokeStyle);
+    if(S.mode==='run'&&S.paths[id]) S.paths[id].forEach(q=>{ ctx.fillStyle=ctx.strokeStyle; ctx.beginPath(); ctx.arc(X(q[0]),Y(q[1]),4,0,7); ctx.fill(); });
+  }
+  // 핸드오프 지점 표시 (스냅 전)
+  if(!snapped && S.mode==='run'){ ctx.strokeStyle='rgba(255,226,138,.7)'; ctx.setLineDash([3,4]); ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(X(S.off.QB.x),Y(S.off.QB.y),R.mesh*SC,0,7); ctx.stroke(); ctx.setLineDash([]); }
+
+  // 속고 있는 수비: 믿는 공 위치로 가는 선
+  if(snapped){ const all=[...f.def,...f.rush];
+    all.forEach((p,i)=>{ if(!f.fooled[i]) return; const b=f.belief[i]; const bp=b==='QB'?f.off.QB:f.off[b];
+      ctx.strokeStyle='rgba(255,120,90,.75)'; ctx.lineWidth=1.5; ctx.setLineDash([2,4]); ctx.beginPath(); ctx.moveTo(X(p[0]),Y(p[1])); ctx.lineTo(X(bp[0]),Y(bp[1])); ctx.stroke(); ctx.setLineDash([]); }); }
+
+  // 러셔 (공격 아래)
+  const rushPos = snapped ? f.rush : D.rush;
+  rushPos.forEach(p=>marker(p[0],p[1],'#2f6fe0','#1f4fa8','R',false,null,0.82));
+  // 공격
+  for(const id of Object.keys(S.off)){ const p=snapped?f.off[id]:[S.off[id].x,S.off[id].y];
+    const sel=S.selected===id;
+    let ring=null;
+    if(snapped&&ELIG.includes(id)&&f.holder==='QB'){ const sp=separation(id,S.t); ring = sp.d>=3?'#2f9a52':sp.d>=1.5?'#d69b12':null; }
+    marker(p[0],p[1],'#ff7a1a','#c75a06',labelOf(id),sel,ring);
+  }
+  // 수비 (공격 위, 조금 작게)
+  const defPos = snapped ? f.def : D.cov.map((c,i)=> c.t==='man' ? manStart(i) : c.home);
+  defPos.forEach((p,i)=>{ if(snapped){ ctx.fillStyle='rgba(47,111,224,.16)'; ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]),2.5*SC,0,7); ctx.fill(); }
+    marker(p[0],p[1],'#2f6fe0','#1f4fa8', D.cov[i].t==='man'?'M':'Z',false,null,0.82); });
+  // 공
+  const holder = snapped ? f.holder : 'QB';
+  if(S.pass && S.t>=S.pass.t){ const a=f.off.QB, b=frameAt(S.pass.t).off[S.pass.rid];
+    ctx.strokeStyle='#ffe28a'; ctx.lineWidth=2; ctx.setLineDash([3,4]); ctx.beginPath(); ctx.moveTo(X(a[0]),Y(a[1])); ctx.lineTo(X(b[0]),Y(b[1])); ctx.stroke(); ctx.setLineDash([]); ball(b[0],b[1]); }
+  else { const hp = snapped ? f.off[holder] : [S.off.QB.x,S.off.QB.y]; ball(hp[0],hp[1]); }
+  if(snapped && S.sim.tackleT!=null && S.t>=S.sim.tackleT){ const hp=f.off[holder]; ctx.fillStyle='#fff'; ctx.font=`bold ${Math.max(12,SC*1.3)}px sans-serif`; ctx.fillText('플래그!',X(hp[0])+SC*1.2,Y(hp[1])-SC*1.2); }
+  if(snapped && S.sim.sackT!=null && S.t>=S.sim.sackT && !(S.pass&&S.pass.t<S.sim.sackT)){ ctx.fillStyle='#fff'; ctx.font=`bold ${Math.max(12,SC*1.3)}px sans-serif`; ctx.fillText('러셔가 잡음',X(S.off.QB.x)+SC*1.2,Y(S.off.QB.y)-SC*1.2); }
+  clock.textContent = snapped ? `${S.t.toFixed(1)}초` + (S.sim.sackT!=null ? ` · 러셔 ${Math.max(0,S.sim.sackT-S.t).toFixed(1)}초` : '') : '0.0초';
+}
+function manStart(i){ // 스냅 전 맨 수비 예상 위치(그리기용)
+  const D=DEFS[S.defKey], mc=D.cov.filter(c=>c.t==='man').length;
+  const order=ELIG.filter(r=>r!=='C').sort((a,b)=>Math.abs(S.off[b].x)-Math.abs(S.off[a].x)); if(mc>3) order.push('C');
+  const idx=D.cov.slice(0,i).filter(c=>c.t==='man').length; const r=S.off[order[idx]]; return [r.x,r.y+R.cushion];
+}
+function labelOf(id){ return id==='QB'?'QB':id==='C'?'C':'W'+id[1]; }
+function marker(x,y,fill,stroke,txt,sel,ring,k){ const r=Math.max(9,SC*0.95)*(k||1);
+  if(ring){ ctx.strokeStyle=ring; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(X(x),Y(y),r+6,0,7); ctx.stroke(); }
+  if(sel){ ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(X(x),Y(y),r+4,0,7); ctx.stroke(); }
+  ctx.fillStyle=fill; ctx.strokeStyle=stroke; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(X(x),Y(y),r,0,7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.font=`bold ${r*0.95}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(txt,X(x),Y(y)+1); ctx.textAlign='start'; ctx.textBaseline='alphabetic'; }
+function ball(x,y){ ctx.fillStyle='#7a4a1e'; ctx.beginPath(); ctx.ellipse(X(x)+SC*0.9,Y(y)-SC*0.9,6,4,-0.6,0,7); ctx.fill(); }
+function arrow(x1,y1,x2,y2,c){ const a=Math.atan2(y2-y1,x2-x1); ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-9*Math.cos(a-0.5),y2-9*Math.sin(a-0.5)); ctx.lineTo(x2-9*Math.cos(a+0.5),y2-9*Math.sin(a+0.5)); ctx.closePath(); ctx.fill(); }
+
+/* =========================================================
+   입력
+   ========================================================= */
+let drag=null;
+cv.addEventListener('pointerdown',e=>{
+  const px=e.offsetX,py=e.offsetY, x=invX(px), y=invY(py);
+  const hit=hitOff(x,y);
+  if(S.sim){ if(!hit) return; const f=frameAt(S.t);
+    if(f.holder!=='QB'){ if(hit===f.holder) recordRun(); else hint.textContent='공은 이미 러너에게 있어요. 러너를 누르면 여기서 기록합니다'; return; }
+    if(ELIG.includes(hit)) throwTo(hit); return; }
+  if(hit){ drag={id:hit,sx:px,sy:py,moved:false}; cv.setPointerCapture(e.pointerId); return; }
+  if(S.mode==='run' && S.selected){ let q=[clamp(x,FIELD.xMin+.5,FIELD.xMax-.5),clamp(y,FIELD.yMin+.5,FIELD.yMax-.5)];
+    const qb=[S.off.QB.x,S.off.QB.y], dq=dist(q,qb); if(dq<R.mesh+1.5){ const k=dq<1e-3?[1,0]:[(q[0]-qb[0])/dq,(q[1]-qb[1])/dq]; q=[qb[0]+k[0]*1.2, qb[1]+k[1]*1.2]; } // QB 근처를 찍으면 QB 옆으로 붙음
+    (S.paths[S.selected]??=[]).push(q); renderRun(); draw(); }
+});
+cv.addEventListener('pointermove',e=>{ if(!drag) return; const dx=e.offsetX-drag.sx, dy=e.offsetY-drag.sy;
+  if(!drag.moved && Math.hypot(dx,dy)<8) return; drag.moved=true;
+  const p=S.off[drag.id]; p.x=clamp(invX(e.offsetX),FIELD.xMin+.8,FIELD.xMax-.8); p.y=clamp(invY(e.offsetY),FIELD.yMin+.5,0); draw(); });
+cv.addEventListener('pointerup',e=>{ if(!drag) return; if(!drag.moved) select(drag.id); drag=null; draw(); });
+cv.addEventListener('pointercancel',()=>{drag=null;});
+function hitOff(x,y){ let best=null,bd=1.8; const f=S.sim?frameAt(S.t):null;
+  for(const id of Object.keys(S.off)){ const p=f?f.off[id]:[S.off[id].x,S.off[id].y]; const d=Math.hypot(p[0]-x,p[1]-y); if(d<bd){bd=d;best=id;} } return best; }
+
+function select(id){
+  if(!ELIG.includes(id)){ hint.textContent='QB는 주거나 던지는 사람이에요. 다른 선수를 고르세요'; return; }
+  S.selected=id; renderGrid(); renderRun();
+  hint.textContent = S.mode==='run' ? `${labelOf(id)}: 필드를 눌러 길을 찍거나, 아래에서 라우트를 고르세요` : `${labelOf(id)} 라우트를 고르세요`; draw();
+}
+function setRoute(key){ if(!S.selected) return; S.off[S.selected].route=key; if(S.mode==='run') delete S.paths[S.selected]; renderGrid(); renderRun(); hint.textContent=`${labelOf(S.selected)}: ${ROUTES[key].n}`; draw(); }
+function setRole(role){ if(!S.selected) return; if(role==='real') for(const k of Object.keys(S.roles)) if(S.roles[k]==='real') delete S.roles[k];
+  if(role) S.roles[S.selected]=role; else delete S.roles[S.selected]; clearSim(); renderRun(); draw(); }
+function renderRun(){
+  if(S.mode!=='run') return;
+  const id=S.selected;
+  runWho.innerHTML = id ? `<b>${labelOf(id)}</b> · ${S.paths[id]&&S.paths[id].length ? `길 ${S.paths[id].length}점` : S.off[id].route ? ROUTES[S.off[id].route].n : '제자리'}` : '선수를 누르세요';
+  roleBtns.querySelectorAll('button').forEach(b=>{ b.disabled=!id; b.classList.toggle('on', !!id && (S.roles[id]||'')===b.dataset.r); });
+  const {events,warn}=ballEvents();
+  const flow = events.length ? '스냅 → '+events.map(e=>`${labelOf(e.pid)} ${e.fake?'주는 척':'공 받음'}(${e.t.toFixed(1)}초)`).join(' → ') : '스냅 → QB가 들고 있음 (던지거나, 누군가에게 주세요)';
+  flowNote.innerHTML = flow + (warn.length ? '<br><span style="color:var(--shut)">'+warn.join('<br>')+'</span>' : '');
+}
+function renderGrid(){
+  const g=routeGrid; g.innerHTML='';
+  const cur=S.selected?S.off[S.selected].route:null;
+  who.innerHTML = S.selected ? `<b>${labelOf(S.selected)}</b> 의 라우트` : '선수를 먼저 누르세요';
+  g.append(el('div','hd',''), el('div','hd','안쪽'), el('div','hd','바깥'), el('div','hd','직진'), el('div','hd','돌아오기'));
+  for(const [rn,keys] of GRID){ g.append(el('div','rh',rn));
+    for(const k of keys){ if(!k){ g.append(el('div','cell empty','')); continue; }
+      const b=document.createElement('button'); b.className='cell'+(cur===k?' on':''); b.disabled=!S.selected;
+      b.innerHTML=icon(ROUTES[k].pts)+`<span>${ROUTES[k].n}</span>`; b.onclick=()=>setRoute(k); g.append(b); } }
+}
+function icon(pts){ const sc=1.1; const all=[[0,0],...pts]; const my=Math.max(...all.map(p=>p[1]),8);
+  const k=26/my; const P=all.map(([x,y])=>[17+x*k*sc*0.9, 28-y*k]);
+  const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  return `<svg viewBox="0 0 34 30"><path d="${d}" fill="none" stroke="#1e2a22" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="28" r="2.2" fill="#ff7a1a"/></svg>`; }
+function el(tag,cls,txt){ const e=document.createElement(tag); e.className=cls; e.textContent=txt; return e; }
+
+/* 수비·공격 칩 */
+function renderChips(){
+  defChips.innerHTML=''; for(const [k,d] of Object.entries(DEFS)){ const b=document.createElement('button'); b.className='chip def'+(S.defKey===k?' on':'');
+    b.innerHTML=`${d.n}`; b.onclick=()=>{S.defKey=k; clearSim(); renderChips(); draw();}; defChips.append(b); }
+  defNote.textContent=DEFS[S.defKey].note;
+  offChips.innerHTML=''; for(const [k,o] of Object.entries(OFF_SETS)){ const b=document.createElement('button'); b.className='chip'+(S.offKey===k?' on':'');
+    b.textContent=o.n; b.onclick=()=>{loadOffSet(k); renderChips(); renderGrid(); draw();}; offChips.append(b); }
+}
+modeSel.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.mode=b.dataset.m; modeSel.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  runBox.style.display=S.mode==='run'?'':'none'; S.selected=null; clearSim(); renderGrid(); renderRun();
+  passNote.textContent = S.mode==='run' ? '스냅 후 공을 든 선수를 누르면 그 자리에서 기록합니다. QB가 들고 있을 땐 리시버를 눌러 던질 수 있어요' : '스냅 후 시간을 멈추고 리시버를 누르면 그 순간 던집니다';
+  hint.textContent = S.mode==='run' ? '선수를 누르고 길을 찍으세요. QB 옆 원을 지나면 공을 주고받을 수 있어요' : '선수를 누르고 라우트를 고르세요'; draw(); });
+btnClearPath.onclick=()=>{ if(S.selected) delete S.paths[S.selected]; clearSim(); renderRun(); draw(); };
+roleBtns.querySelectorAll('button').forEach(b=>b.onclick=()=>setRole(b.dataset.r));
+
+/* 스냅·재생 */
+btnSnap.onclick=()=>{ simulate(); S.t=0; S.pass=null; result.style.display='none';
+  hint.textContent = S.sim.realEv ? '수비가 어디로 몰리는지 보세요. 러너를 누르면 그 자리에서 기록' : '시간을 멈추고 리시버를 누르면 던집니다'; play(); };
+btnReset.onclick=()=>{ clearSim(); hint.textContent='선수를 누르고 라우트를 고르세요'; draw(); };
+scrub.oninput=()=>{ if(!S.sim) return; stopPlay(); S.t=scrub.value/100; draw(); };
+function play(){ S.playing=true; let last=performance.now();
+  const tick=now=>{ if(!S.playing) return; S.t=Math.min(R.T,S.t+(now-last)/1000); last=now; scrub.value=Math.round(S.t*100); draw();
+    if(S.sim.tackleT!=null && S.t>=S.sim.tackleT){ S.t=S.sim.tackleT; scrub.value=Math.round(S.t*100); stopPlay(); recordRun(); return; }
+    if(S.t>=R.T){ S.playing=false; return; } S.raf=requestAnimationFrame(tick); }; S.raf=requestAnimationFrame(tick); }
+function stopPlay(){ S.playing=false; cancelAnimationFrame(S.raf); }
+
+function throwTo(rid){
+  stopPlay(); const t=S.t; S.pass={rid,t}; const s=separation(rid,t);
+  const sacked = S.sim.sackT!=null && t>=S.sim.sackT;
+  const cls = sacked ? 'shut' : s.d>=3?'open':s.d>=1.5?'tight':'shut';
+  const word = sacked ? '러셔가 먼저 왔어요' : s.d>=3?'열렸다':s.d>=1.5?'타이트':'막혔다';
+  resBig.className='big '+cls; resBig.textContent=`${labelOf(rid)} ${word}`;
+  const fooled=frameAt(t).fooled.filter(Boolean).length;
+  resSub.textContent = `${t.toFixed(1)}초에 던짐 · 가장 가까운 수비와 ${s.d.toFixed(1)}야드` + (s.who>=0 ? (s.ahead?' · 수비가 QB 쪽에서 막음':' · 수비는 리시버 뒤'):'')
+    + (S.sim.sackT!=null && !sacked ? ` · 러셔까지 ${(S.sim.sackT-t).toFixed(1)}초` : '') + (fooled ? ` · 속고 있던 수비 ${fooled}명` : '');
+  ask.textContent=question(rid,s,t,sacked,fooled);
+  result.style.display='block';
+  addLog({f:DEFS[S.defKey].n, r:labelOf(rid), rt:(S.mode==='run'&&S.sim.events.length?'플레이액션 ':'')+(S.off[rid].route?ROUTES[S.off[rid].route].n:'대기'), d:s.d.toFixed(1)+'yd', t:+t.toFixed(1), cls});
+  draw();
+}
+function recordRun(){
+  stopPlay(); const t=S.t, f=frameAt(t), rid=f.holder; if(rid==='QB') return;
+  const hp=f.off[rid], gain=+hp[1].toFixed(1), s=separation(rid,t), tackled=S.sim.tackleT!=null && t>=S.sim.tackleT;
+  const cls = gain>=8?'open':gain>=4?'tight':'shut';
+  resBig.className='big '+cls; resBig.textContent = `${labelOf(rid)} 런 ${gain>=0?'+':''}${gain}야드` + (tackled?' · 플래그':'');
+  resSub.textContent = `${t.toFixed(1)}초` + (tackled?'에 잡힘':'') + ` · 가장 가까운 수비 ${s.d.toFixed(1)}야드 · 공 받을 때 속고 있던 수비 ${S.sim.fooledAtHand}명`;
+  ask.textContent=runQuestion(gain,S.sim.fooledAtHand);
+  result.style.display='block';
+  addLog({f:DEFS[S.defKey].n, r:labelOf(rid), rt:'런'+(S.sim.events.some(e=>e.fake)?'(페이크)':''), d:(gain>=0?'+':'')+gain+'yd', t:+t.toFixed(1), cls});
+  draw();
+}
+function runQuestion(gain,fooled){
+  const man = S.defKey==='man';
+  if(gain>=8 && fooled>=2) return '수비 몇 명이 페이크 쪽으로 갔나요? 되감아서 그 수비들이 언제 돌아섰는지, 왜 멀리 있는 수비가 더 늦었는지 보세요.';
+  if(gain>=8) return '공간이 어디에 있었나요? 페이크 없이도 열린 거라면, 어느 수비 대형의 구조 때문인지 찾아보세요.';
+  if(man) return '맨 수비는 자기 리시버를 놓지 않아요. 페이크로 움직일 수 있는 수비는 누구였을까요? 러너를 막은 수비는 원래 누구를 맡고 있었나요?';
+  if(fooled===0) return '아무도 속지 않았어요. 주는 척하는 선수가 QB 옆을 지나는 게 진짜 핸드오프보다 먼저였나요? 시간을 되감아 보세요.';
+  return '공을 받은 순간 가장 가까운 수비는 누구였고, 페이크가 그 수비를 왜 못 움직였을까요? 반대편으로 달리면 어떻게 될까요?';
+}
+function question(rid,s,t,sacked,fooled){
+  const D=DEFS[S.defKey], covType = s.who>=0 ? D.cov[s.who].t : 'rush';
+  const rt=S.off[rid].route;
+  if(sacked) return '공간은 있었는데 시간이 없었어요. 더 짧은 라우트로 같은 공간을 더 빨리 만들 수 있을까요?';
+  if(fooled && s.d>=3) return '어느 수비가 페이크에 끌려갔나요? 그 수비가 원래 지켜야 했던 자리가 지금 던진 자리였는지 확인해 보세요.';
+  if(s.d>=3 && covType==='man') return '간격이 언제 벌어졌는지 시간을 되감아 보세요. 리시버가 꺾은 직후인가요? 그 수비수는 왜 늦었을까요?';
+  if(s.d>=3 && covType==='zone') return '그 수비수는 왜 따라오지 않았을까요? 스냅 전 화면의 구역 경계를 다시 보고, 리시버가 어느 두 구역 사이를 지나갔는지 찾아보세요.';
+  if(s.d<3 && covType==='zone') return '존 수비는 꺾어도 소용없어요. 이 수비수가 지키는 구역 밖으로 나가거나, 다른 리시버가 이 수비수를 먼저 끌어내게 하려면 어떻게 조합해야 할까요?';
+  if(s.d<3 && covType==='man') return (rt==='go') ? '직진은 같은 속도면 붙어 옵니다. 어느 지점에서 한 번 꺾으면 수비가 늦을까요?' : '이 라우트는 이 수비수를 어디로 끌어냈나요? 다른 리시버가 그 빈자리를 쓰게 만들 수 있을까요?';
+  return '같은 라우트를 다른 수비 대형에서 돌려보세요. 어느 대형에서 공간이 사라지나요?';
+}
+
+/* 기록 */
+function addLog(e){ S.log.unshift(e); S.log=S.log.slice(0,10); localStorage.setItem('sb.log',JSON.stringify(S.log)); renderLog(); }
+function renderLog(){ logCount.textContent=S.log.length?`${S.log.length}회`:''; if(!S.log.length){ log.innerHTML='<div class="empty-note">아직 던진 적이 없어요</div>'; return; }
+  log.innerHTML=S.log.map(e=>`<div class="try"><span class="f">${e.f}</span><span>${e.r} ${e.rt} · ${e.t}초</span><span class="s ${e.cls}">${e.d}</span></div>`).join(''); }
+
+/* 설정 */
+btnGear.onclick=()=>{ inpRush.value=R.rushArrive; settings.style.display='flex'; };
+btnCloseSet.onclick=()=>{ const v=clamp(+inpRush.value||2.5,1,6); R.rushArrive=v; localStorage.setItem('sb.rush',v); settings.style.display='none'; clearSim(); draw(); };
+btnClearLog.onclick=()=>{ S.log=[]; localStorage.removeItem('sb.log'); renderLog(); };
+settings.addEventListener('click',e=>{ if(e.target===settings) btnCloseSet.onclick(); });
+
+/* 시작 */
+loadOffSet('spread'); renderChips(); renderGrid(); renderLog();
+window.addEventListener('resize',resize); resize();
+</script>
+</body>
+</html>
