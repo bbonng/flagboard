@@ -58,6 +58,19 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .key { margin-top: 18px; display: grid; gap: 8px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
 .key b { color: var(--fg); }
 .sw { display: inline-block; width: 26px; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 8px; }
+/* 전체화면: 영상(작전판)만 화면 가득, 9:16 비율 유지 */
+.fsbar { display: none; }
+.screen.fs { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; background: #000; box-shadow: none; }
+.screen.fs.pseudo { position: fixed; inset: 0; z-index: 1000; width: 100vw; height: 100vh; height: 100dvh; }
+.screen.fs canvas { object-fit: contain; }
+.screen.fs .bigplay span { width: 120px; height: 120px; }
+.screen.fs .bigplay svg { width: 48px; height: 48px; }
+.screen.fs .fsbar { display: flex; align-items: center; gap: 10px; position: absolute; z-index: 2; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(620px, calc(100% - 32px)); padding: 10px 12px; border-radius: 16px; background: rgba(8, 20, 14, .82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #fff; transition: opacity .25s ease; }
+.screen.fs.idle .fsbar { opacity: 0; pointer-events: none; }
+.screen.fs.idle { cursor: none; }
+.fsbar .btn { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); color: #fff; height: 48px; min-width: 48px; }
+.fsbar .btn svg { width: 22px; height: 22px; }
+.fsbar input[type=range] { flex: 1; min-width: 0; accent-color: #FF5C9C; }
 @media (max-width: 760px) {
   .main { grid-template-columns: minmax(0, 1fr); }
   .stage { width: min(100%, 440px); margin: 0 auto; }
@@ -69,7 +82,7 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
   <header>
     <div class="eyebrow">스포츠와 A.I · 5대5 플래그풋볼</div>
     <h1>플래그풋볼 기초 작전 10</h1>
-    <p>보고 싶은 작전을 누르면 천천히 움직입니다. 수비는 기본 2-2 존(아래 2 · 위 2 · 러셔 1). 막대를 끌면 원하는 순간에 멈춰 볼 수 있어요. 보고 나서 공간작전판이나 운동장에서 직접 해 보세요.</p>
+    <p>보고 싶은 작전을 누르면 천천히 움직입니다. 수비는 기본 2-2 존(아래 2 · 위 2 · 러셔 1). 막대를 끌면 원하는 순간에 멈춰 볼 수 있어요. 영상 아래 오른쪽 끝 <b>⛶ 버튼</b>을 누르면 영상만 화면 가득 커집니다(TV 미러링용, 화면을 톡 치면 멈춤·재생). 보고 나서 공간작전판이나 운동장에서 직접 해 보세요.</p>
   </header>
   <div class="main">
     <section class="stage" aria-label="작전 영상">
@@ -80,6 +93,13 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
       <div class="screen">
         <canvas id="cv" width="1080" height="1920" aria-label="작전 모션그래픽"></canvas>
         <button class="bigplay" id="bigplay" aria-label="재생"><span><svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg></span></button>
+        <div class="fsbar" id="fsbar">
+          <button class="btn" id="fprev" aria-label="이전 작전"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+          <button class="btn" id="ftoggle" aria-label="재생"><svg viewBox="0 0 24 24" id="fticon"><path d="M7 4l13 8-13 8z"/></svg></button>
+          <button class="btn" id="fnext" aria-label="다음 작전"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+          <input type="range" id="fscrub" min="0" max="1000" value="0" aria-label="재생 위치">
+          <button class="btn" id="fsexit" aria-label="전체화면 끝내기"><svg viewBox="0 0 24 24"><path d="M8 3h2v7H3V8h5zM14 3h2v5h5v2h-7zM3 14h7v7H8v-5H3zM14 14h7v2h-5v5h-2z"/></svg></button>
+        </div>
       </div>
       <div class="controls">
         <button class="btn" id="prev" aria-label="이전 작전"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
@@ -87,6 +107,7 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
         <button class="btn" id="next" aria-label="다음 작전"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
         <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="재생 위치">
         <span class="time" id="time">0.0 / 0.0초</span>
+        <button class="btn" id="fs" aria-label="영상만 전체화면" title="영상만 전체화면 (F)"><svg viewBox="0 0 24 24"><path d="M3 3h7v2H5v5H3zM14 3h7v7h-2V5h-5zM3 14h2v5h5v2H3zM19 14h2v7h-7v-2h5z"/></svg></button>
       </div>
       <div class="opts">
         <label><input type="checkbox" id="chain"> 다음 작전 이어서 재생</label>
@@ -1267,13 +1288,14 @@ function renderMontage(ctx, M, T) {
   const scrub = document.getElementById('scrub'), timeEl = document.getElementById('time');
   const chain = document.getElementById('chain'), bigplay = document.getElementById('bigplay');
   const ticon = document.getElementById('ticon'), toggleBtn = document.getElementById('toggle');
+  const fscrub = document.getElementById('fscrub'), fticon = document.getElementById('fticon'), ftoggle = document.getElementById('ftoggle');
   const M = montagePrep(preps);
   let mode = 'p';
   const totalNow = () => mode === 'm' ? M.total : preps[idx].total;
   function draw() {
     if (mode === 'm') renderMontage(ctx, M, T); else renderPlay(ctx, preps[idx], T, idx, preps.length);
     const tot = totalNow();
-    scrub.value = Math.round(T / tot * 1000);
+    scrub.value = fscrub.value = Math.round(T / tot * 1000);
     timeEl.textContent = `${T.toFixed(1)} / ${tot.toFixed(1)}초`;
     if (mode === 'm') {
       const k = Math.floor((T - MT.intro) / MT.per);
@@ -1295,8 +1317,8 @@ function renderMontage(ctx, M, T) {
     draw();
   }
   function setIcon() {
-    ticon.innerHTML = playing ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4l13 8-13 8z"/>';
-    toggleBtn.setAttribute('aria-label', playing ? '일시정지' : '재생');
+    ticon.innerHTML = fticon.innerHTML = playing ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4l13 8-13 8z"/>';
+    toggleBtn.setAttribute('aria-label', playing ? '일시정지' : '재생'); ftoggle.setAttribute('aria-label', playing ? '일시정지' : '재생');
     bigplay.hidden = playing;
   }
   function loop(now) {
@@ -1322,6 +1344,69 @@ function renderMontage(ctx, M, T) {
   scrub.addEventListener('input', () => { T = scrub.value / 1000 * totalNow(); draw(); });
   document.getElementById('modeM').addEventListener('click', () => { setMode('m'); T = 0; draw(); start(); });
   document.getElementById('modeP').addEventListener('click', () => { select(idx, 0); start(); });
+  // ===== 영상만 전체화면 (TV 미러링용) =====
+  const screenEl = document.querySelector('.screen');
+  let pseudoFs = false, idleTimer = 0, wakeLock = null;
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  const isFs = () => fsEl() === screenEl || pseudoFs;
+  const toggleNow = () => playing ? stop() : start();
+  function wake() {
+    clearTimeout(idleTimer); screenEl.classList.remove('idle');
+    idleTimer = setTimeout(() => { if (isFs()) screenEl.classList.add('idle'); }, 2500);
+  }
+  async function keepAwake(on) {
+    try {
+      if (on && 'wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+      if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch (e) { wakeLock = null; }
+  }
+  function syncFs() {
+    const on = isFs();
+    screenEl.classList.toggle('fs', on); screenEl.classList.toggle('pseudo', pseudoFs);
+    document.documentElement.style.overflow = pseudoFs ? 'hidden' : '';
+    keepAwake(on);
+    if (on) wake(); else { clearTimeout(idleTimer); screenEl.classList.remove('idle'); }
+    draw();
+  }
+  function enterFs() {
+    const req = screenEl.requestFullscreen || screenEl.webkitRequestFullscreen;
+    const fallback = () => { pseudoFs = true; syncFs(); };
+    if (!req) return fallback();
+    try { const r = req.call(screenEl); if (r && r.catch) r.catch(fallback); } catch (e) { fallback(); }
+  }
+  function exitFs() {
+    if (pseudoFs) { pseudoFs = false; syncFs(); return; }
+    const ex = document.exitFullscreen || document.webkitExitFullscreen;
+    if (fsEl() && ex) { try { const r = ex.call(document); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+  }
+  document.addEventListener('fullscreenchange', syncFs);
+  document.addEventListener('webkitfullscreenchange', syncFs);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && isFs()) keepAwake(true); });
+  document.getElementById('fs').addEventListener('click', enterFs);
+  document.getElementById('fsexit').addEventListener('click', (e) => { e.stopPropagation(); exitFs(); });
+  document.getElementById('fprev').addEventListener('click', (e) => { e.stopPropagation(); jump(-1); wake(); });
+  document.getElementById('fnext').addEventListener('click', (e) => { e.stopPropagation(); jump(1); wake(); });
+  ftoggle.addEventListener('click', (e) => { e.stopPropagation(); toggleNow(); wake(); });
+  fscrub.addEventListener('input', () => { T = fscrub.value / 1000 * totalNow(); draw(); wake(); });
+  document.getElementById('fsbar').addEventListener('pointerdown', (e) => { e.stopPropagation(); wake(); });
+  // 전체화면에서 영상을 톡 치면 멈춤·재생 (멈춰 있을 땐 큰 재생 버튼이 받음)
+  cv.addEventListener('click', () => { if (isFs()) { toggleNow(); wake(); } });
+  bigplay.addEventListener('click', () => { if (isFs()) wake(); });
+  screenEl.addEventListener('pointermove', () => { if (isFs()) wake(); });
+  // 키보드·발표용 리모컨: 스페이스 재생/멈춤, ←→·PageUp/Down 작전 넘기기, F 전체화면, Esc 끝내기
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+    let used = true;
+    if (e.key === ' ' || e.key === 'k' || e.key === 'K') toggleNow();
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown') jump(1);
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') jump(-1);
+    else if (e.key === 'f' || e.key === 'F') { isFs() ? exitFs() : enterFs(); }
+    else if (e.key === 'Escape' && pseudoFs) exitFs();
+    else used = false;
+    if (used) { e.preventDefault(); if (isFs()) wake(); }
+  });
   window.FF = { preps, M, render: (i, t) => renderPlay(ctx, preps[i], t, i, preps.length), total: (i) => preps[i].total, montage: (t) => renderMontage(ctx, M, t) };
   const restT = () => { const P = preps[0]; const d = P.segs.find((s) => s.name === 'ready'); return d.s + 0.1; };
   const hash = (location.hash || '').replace('#', '');
