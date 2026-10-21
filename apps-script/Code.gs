@@ -21,6 +21,9 @@
  *  - 작전   : 공간작전판 보관함. 시간 | 반 | 조 | 칸 | 작전 이름 | 설명 | 작전 코드 | 판 버전 | 숨김 | 저장 번호
  *  - 계획서 : 작전 실행 계획서 제출. 시간 | 반 | 조 | 조원 | 작전명 | 계획서 코드 | 판 버전 | 숨김 | 저장 번호
  *             → 둘 다 덮어쓰지 않고 한 줄씩 쌓입니다. '숨김'에 체크하면 그 줄은 없는 것으로 칩니다.
+ *  - 초안   : 작전 실행 계획서 임시저장. 반 | 조 | 시간 | 초안 코드 | 판 버전
+ *             → 조마다 한 줄, 학생이 [저장]을 누를 때마다 덮어씁니다. 평가는 [계획서] 제출본으로만 합니다.
+ *             (이 탭은 처음 저장할 때 저절로 생깁니다. 메뉴를 누를 필요 없음)
  *  - 설정   : 교사열쇠 | 제출마감(공간작전판 보관함) | 계획서마감(수행평가 제출)
  *             예: 8,9 → 8반·9반 마감 / all → 전체 마감 / 비우면 마감 없음
  *
@@ -28,7 +31,8 @@
  * 계획서에는 평가를 위해 조원 이름과 포지션 이름이 들어갑니다 (선생님 시트에만 저장).
  */
 
-const SHEET_TEAMS = '조', SHEET_PLAYS = '작전', SHEET_PLANS = '계획서', SHEET_CONF = '설정';
+const SHEET_TEAMS = '조', SHEET_PLAYS = '작전', SHEET_PLANS = '계획서', SHEET_CONF = '설정', SHEET_DRAFTS = '초안';
+const DRAFT_HEAD = ['반', '조', '시간', '초안 코드', '판 버전'];
 const SLOTS = 3;              // 공간작전판 조마다 작전 칸 수
 const MAX_FAIL = 5;           // 비밀번호를 이만큼 틀리면
 const LOCK_SEC = 300;         // 이 시간(초) 동안 잠김
@@ -56,6 +60,7 @@ function setup_() {
   ensureSheet_(ss, SHEET_PLAYS, ['시간', '반', '조', '칸', '작전 이름', '설명', '작전 코드', '판 버전', '숨김', '저장 번호']);
   ensureSheet_(ss, SHEET_PLANS, ['시간', '반', '조', '조원', '작전명', '계획서 코드', '판 버전', '숨김', '저장 번호']);
   ensureSheet_(ss, SHEET_CONF, ['항목', '값']);
+  ensureSheet_(ss, SHEET_DRAFTS, DRAFT_HEAD);
   if (!getConf_('교사열쇠')) setConf_('교사열쇠', randKey_());
   if (getConf_('제출마감') === null) setConf_('제출마감', '');
   if (getConf_('계획서마감') === null) setConf_('계획서마감', '');
@@ -108,6 +113,7 @@ function doPost(e) {
       case 'plan_save': return json_(planSave_(q));
       case 'plan_teacher': return json_(planTeacher_(q));
       case 'plan_history': return json_(planHistory_(q));
+      case 'draft_save': return json_(draftSave_(q));
       default: return json_({ ok: false, err: 'action', msg: '알 수 없는 요청이에요' });
     }
   } catch (err) {
@@ -167,8 +173,37 @@ function planLogin_(q) {
   const c = +q.c, t = +q.t;
   let last = null, n = 0;
   plans_().forEach(p => { if (p.c === c && p.t === t && !p.hidden) { last = p; n++; } });
-  return { ok: true, c: c, t: t, closed: isClosed_(c, '계획서마감'),
-    plan: last ? { code: last.code, ver: last.ver, time: last.time, n: n } : null };
+  const d = draftOf_(c, t);
+  return { ok: true, c: c, t: t, closed: isClosed_(c, '계획서마감'), drafts: true,
+    plan: last ? { code: last.code, ver: last.ver, time: last.time, n: n } : null,
+    draft: d ? { code: d.code, ver: d.ver, time: d.time } : null };
+}
+
+/* 초안 저장: 조마다 한 줄을 덮어씀 (제출과 별개, 평가에 쓰지 않음)
+   base = 이 기기가 마지막으로 불러오거나 저장한 초안 시각. 다른 기기가 그 뒤에 저장했으면 force 없이는 덮어쓰지 않음 */
+function draftSave_(q) {
+  const a = auth_(q.c, q.t, q.pin); if (!a.ok) return a;
+  const c = +q.c, t = +q.t;
+  const code = String(q.code || '');
+  if (!code) return { ok: false, err: 'code', msg: '저장할 내용이 비었어요' };
+  if (code.length > MAX_PLAN) return { ok: false, err: 'code', msg: '계획서가 너무 길어요. 선을 조금 줄이거나 선생님께 알려 주세요' };
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ensureSheet_(ss, SHEET_DRAFTS, DRAFT_HEAD);
+    const v = sh.getDataRange().getValues();
+    let row = 0;
+    for (let i = 1; i < v.length; i++) if (+v[i][0] === c && +v[i][1] === t) { row = i + 1; break; }
+    if (row && !q.force) {
+      const had = v[row - 1][2] instanceof Date ? v[row - 1][2].getTime() : 0;
+      const base = Date.parse(q.base || '') || 0;
+      if (had && had > base + 1000) return { ok: false, err: 'newer', time: iso_(v[row - 1][2]), msg: '다른 기기에서 더 최근에 저장했어요' };
+    }
+    const now = new Date();
+    const vals = [[c, t, now, code, safe_(q.ver, 10)]];
+    if (row) sh.getRange(row, 1, 1, 5).setValues(vals); else sh.appendRow(vals[0]);
+    return { ok: true, time: now.toISOString() };
+  } finally { lock.releaseLock(); }
 }
 
 function planSave_(q) {
@@ -252,6 +287,13 @@ function plays_() {
     out.push({ time: iso_(r[0]), c: c, t: t, slot: slot, name: String(r[4]), desc: String(r[5]), code: String(r[6]), ver: String(r[7]), hidden: isTrue_(r[8]) });
   }
   return out;
+}
+
+function draftOf_(c, t) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DRAFTS); if (!sh) return null;
+  const v = sh.getDataRange().getValues();
+  for (let i = 1; i < v.length; i++) if (+v[i][0] === c && +v[i][1] === t && String(v[i][3])) return { time: iso_(v[i][2]), code: String(v[i][3]), ver: String(v[i][4]) };
+  return null;
 }
 
 function plans_() {
