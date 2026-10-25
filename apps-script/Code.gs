@@ -2,8 +2,7 @@
  * 플래그풋볼 작전 저장소 (Google Apps Script)
  *   - 공간작전판(flagboard)  : 조별 작전 보관함 1·2·3
  *   - 작전 실행 계획서(flagplan): 조별 계획서(작전 3개 + 조원) 제출  ← 수행평가
- *   - FLAG GAME(flaggame)      : 경기 점수 기록 + 교실 TV 실시간 순위표
- *   세 페이지가 같은 시트, 같은 조 비밀번호, 같은 교사 열쇠를 씁니다.
+ *   두 페이지가 같은 시트, 같은 조 비밀번호, 같은 교사 열쇠를 씁니다.
  *
  * 쓰는 법
  *  1. 구글 시트를 새로 만들고 [확장 프로그램 > Apps Script]에 이 코드를 통째로 붙여 넣고 저장
@@ -25,21 +24,14 @@
  *  - 초안   : 작전 실행 계획서 임시저장. 반 | 조 | 시간 | 초안 코드 | 판 버전
  *             → 조마다 한 줄, 학생이 [저장]을 누를 때마다 덮어씁니다. 평가는 [계획서] 제출본으로만 합니다.
  *             (이 탭은 처음 저장할 때 저절로 생깁니다. 메뉴를 누를 필요 없음)
- *  - 게임기록 : FLAG GAME 경기 결과. 시간 | 문제 | 반 | 번호 | 이름 | 난이도 | 점수 | 랭킹 점수 | 터치다운 | 숨김 | 저장 번호
- *             → 경기를 끝까지 하면 한 줄씩 쌓입니다. 순위표는 한 사람(반·번호·이름)의 최고 랭킹 점수만 셉니다.
- *             (이 탭은 처음 기록이 들어올 때 저절로 생깁니다)
  *  - 설정   : 교사열쇠 | 제출마감(공간작전판 보관함) | 계획서마감(수행평가 제출)
  *             예: 8,9 → 8반·9반 마감 / all → 전체 마감 / 비우면 마감 없음
  *
  * 공간작전판 보관함에는 학생 이름을 저장하지 않습니다.
- * 게임기록에는 순위표를 위해 반·번호·이름이 들어갑니다. 순위표는 교사 열쇠가 있어야 볼 수 있어요.
  * 계획서에는 평가를 위해 조원 이름과 포지션 이름이 들어갑니다 (선생님 시트에만 저장).
  */
 
-const SHEET_TEAMS = '조', SHEET_PLAYS = '작전', SHEET_PLANS = '계획서', SHEET_CONF = '설정', SHEET_DRAFTS = '초안', SHEET_SCORES = '게임기록';
-const SCORE_HEAD = ['시간', '문제', '반', '번호', '이름', '난이도', '점수', '랭킹 점수', '터치다운', '숨김', '저장 번호'];
-const LV_MULT = [1, 1.5, 2, 3]; // FLAG GAME 난이도별 랭킹 배율 (루키·주전·프로·올스타)
-const MAX_SCORE = 45;           // 드라이브 5번 × (터치다운 6 + 첫 공격 보너스 1 + 추가 2점)
+const SHEET_TEAMS = '조', SHEET_PLAYS = '작전', SHEET_PLANS = '계획서', SHEET_CONF = '설정', SHEET_DRAFTS = '초안';
 const DRAFT_HEAD = ['반', '조', '시간', '초안 코드', '판 버전'];
 const SLOTS = 3;              // 공간작전판 조마다 작전 칸 수
 const MAX_FAIL = 5;           // 비밀번호를 이만큼 틀리면
@@ -122,9 +114,6 @@ function doPost(e) {
       case 'plan_teacher': return json_(planTeacher_(q));
       case 'plan_history': return json_(planHistory_(q));
       case 'draft_save': return json_(draftSave_(q));
-      // FLAG GAME
-      case 'score_submit': return json_(scoreSubmit_(q));
-      case 'score_board': return json_(scoreBoard_(q));
       default: return json_({ ok: false, err: 'action', msg: '알 수 없는 요청이에요' });
     }
   } catch (err) {
@@ -176,39 +165,6 @@ function history_(q) {
   const list = plays_().filter(p => p.c === c && p.t === t && p.slot === slot)
     .map(p => ({ name: p.name, desc: p.desc, code: p.code, ver: p.ver, time: p.time, hidden: p.hidden }));
   return { ok: true, c: c, t: t, slot: slot, list: list.reverse() };
-}
-
-/* ---------------- FLAG GAME 기록 ---------------- */
-function scoreSubmit_(q) {
-  const quiz = +q.q, c = +q.c, n = +q.n, lv = +q.lv, score = +q.score, td = +q.td, name = safe_(q.name, 10);
-  if (!(quiz >= 1 && quiz <= 999999 && quiz === Math.floor(quiz))) return { ok: false, err: 'q', msg: '문제 번호가 이상해요' };
-  if (!(c >= 1 && c <= 30 && n >= 1 && n <= 60) || !name) return { ok: false, err: 'who', msg: '반·번호·이름을 확인해 주세요' };
-  if (!(lv >= 1 && lv <= LV_MULT.length)) return { ok: false, err: 'lv', msg: '난이도가 이상해요' };
-  if (!(score >= 0 && score <= MAX_SCORE && score === Math.floor(score)) || !(td >= 0 && td <= 5)) return { ok: false, err: 'score', msg: '점수가 이상해요' };
-  const rank = Math.round(score * LV_MULT[lv - 1]), id = String(q.id || '').slice(0, 40);
-  const lock = LockService.getScriptLock(); lock.waitLock(20000);
-  try {
-    const sh = ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_SCORES, SCORE_HEAD);
-    if (!(id && seenId_(sh, 11, id))) sh.appendRow([new Date(), quiz, c, n, name, lv, score, rank, td, false, id]); // 응답이 끊겨 다시 보낸 경우 한 번만
-  } finally { lock.releaseLock(); }
-  const board = boardOf_(quiz), me = c + '-' + n + '-' + name;
-  const place = board.findIndex(r => r.c + '-' + r.n + '-' + r.name === me) + 1;
-  return { ok: true, rank: rank, place: place, players: board.length };
-}
-
-function scoreBoard_(q) {
-  const k = keyCheck_(q.key); if (!k.ok) return k;
-  const quiz = +q.q; if (!(quiz >= 1)) return { ok: false, err: 'q', msg: '문제 번호를 넣어 주세요' };
-  const board = boardOf_(quiz);
-  return { ok: true, q: quiz, rows: board.slice(0, 300), players: board.length, now: new Date().toISOString() };
-}
-
-/* 한 사람(반·번호·이름)의 최고 기록만: 랭킹 점수 → 점수 → 먼저 낸 사람 순 */
-function boardOf_(quiz) {
-  const best = {};
-  scores_().forEach(r => { if (r.q !== quiz || r.hidden) return; const key = r.c + '-' + r.n + '-' + r.name; const b = best[key];
-    if (!b || r.rank > b.rank || (r.rank === b.rank && r.score > b.score)) best[key] = Object.assign({}, r, { tries: (b ? b.tries : 0) + 1 }); else b.tries++; });
-  return Object.keys(best).map(k => best[k]).sort((a, b) => b.rank - a.rank || b.score - a.score || (a.time < b.time ? -1 : 1));
 }
 
 /* ---------------- 작전 실행 계획서 ---------------- */
@@ -329,16 +285,6 @@ function plays_() {
   for (let i = 1; i < v.length; i++) {
     const r = v[i]; const c = +r[1], t = +r[2], slot = +r[3]; if (!(c > 0 && t > 0 && slot > 0)) continue;
     out.push({ time: iso_(r[0]), c: c, t: t, slot: slot, name: String(r[4]), desc: String(r[5]), code: String(r[6]), ver: String(r[7]), hidden: isTrue_(r[8]) });
-  }
-  return out;
-}
-
-function scores_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SCORES); if (!sh) return [];
-  const v = sh.getDataRange().getValues(); const out = [];
-  for (let i = 1; i < v.length; i++) {
-    const r = v[i]; const quiz = +r[1], c = +r[2], n = +r[3]; if (!(quiz > 0 && c > 0 && n > 0)) continue;
-    out.push({ time: iso_(r[0]), q: quiz, c: c, n: n, name: String(r[4]), lv: +r[5], score: +r[6], rank: +r[7], td: +r[8], hidden: isTrue_(r[9]) });
   }
   return out;
 }
