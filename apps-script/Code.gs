@@ -24,6 +24,10 @@
  *  - 초안   : 작전 실행 계획서 임시저장. 반 | 조 | 시간 | 초안 코드 | 판 버전
  *             → 조마다 한 줄, 학생이 [저장]을 누를 때마다 덮어씁니다. 평가는 [계획서] 제출본으로만 합니다.
  *             (이 탭은 처음 저장할 때 저절로 생깁니다. 메뉴를 누를 필요 없음)
+ *  - 평가   : 계획서 평가판에서 선생님이 넣은 점수·메모·연습 기록. 키 | 반 | 조 | 구분 | 대상 | 점수 | 메모 | 계획서만 | 기록 | 시간
+ *             → 키마다 한 줄, 평가판에서 바꿀 때마다 덮어씁니다. 점수·메모·계획서만 칸은 시트에서 직접 고쳐도 평가판에 반영돼요.
+ *               (구분: 계획서 = 조 점수 / 실행 = 학생 점수 / 연습 = 작전별 연습 기록. 키 칸은 고치지 마세요)
+ *             → [작전판 > 점수표 정리]를 누르면 [점수표] 탭에 반·조·이름·계획서·실행·합계가 정리됩니다.
  *  - 설정   : 교사열쇠 | 제출마감(공간작전판 보관함) | 계획서마감(수행평가 제출)
  *             예: 8,9 → 8반·9반 마감 / all → 전체 마감 / 비우면 마감 없음
  *
@@ -32,6 +36,9 @@
  */
 
 const SHEET_TEAMS = '조', SHEET_PLAYS = '작전', SHEET_PLANS = '계획서', SHEET_CONF = '설정', SHEET_DRAFTS = '초안';
+const SHEET_EVAL = '평가', SHEET_SCORE = '점수표';
+const EVAL_HEAD = ['키', '반', '조', '구분', '대상', '점수', '메모', '계획서만', '기록', '시간'];
+const MAX_REPS = 45000;       // 작전 하나의 연습 기록 최대 길이
 const DRAFT_HEAD = ['반', '조', '시간', '초안 코드', '판 버전'];
 const SLOTS = 3;              // 공간작전판 조마다 작전 칸 수
 const MAX_FAIL = 5;           // 비밀번호를 이만큼 틀리면
@@ -45,6 +52,8 @@ function onOpen() {
     .addItem('처음 설정', 'setup')
     .addItem('조 비밀번호 만들기', 'makeTeams')
     .addItem('교사 열쇠 보기', 'showKey')
+    .addSeparator()
+    .addItem('점수표 정리', 'buildScores')
     .addToUi();
 }
 
@@ -61,6 +70,7 @@ function setup_() {
   ensureSheet_(ss, SHEET_PLANS, ['시간', '반', '조', '조원', '작전명', '계획서 코드', '판 버전', '숨김', '저장 번호']);
   ensureSheet_(ss, SHEET_CONF, ['항목', '값']);
   ensureSheet_(ss, SHEET_DRAFTS, DRAFT_HEAD);
+  ensureSheet_(ss, SHEET_EVAL, EVAL_HEAD);
   if (!getConf_('교사열쇠')) setConf_('교사열쇠', randKey_());
   if (getConf_('제출마감') === null) setConf_('제출마감', '');
   if (getConf_('계획서마감') === null) setConf_('계획서마감', '');
@@ -114,6 +124,8 @@ function doPost(e) {
       case 'plan_teacher': return json_(planTeacher_(q));
       case 'plan_history': return json_(planHistory_(q));
       case 'draft_save': return json_(draftSave_(q));
+      // 계획서 평가판 (선생님 점수·연습 기록)
+      case 'eval_set': return json_(evalSet_(q));
       default: return json_({ ok: false, err: 'action', msg: '알 수 없는 요청이에요' });
     }
   } catch (err) {
@@ -231,7 +243,7 @@ function planTeacher_(q) {
   const latest = {}, count = {};
   plans_().forEach(p => { if (p.hidden) return; const key = p.c + '-' + p.t; latest[key] = p; count[key] = (count[key] || 0) + 1; });
   const plans = Object.keys(latest).map(key => { const p = latest[key]; return { c: p.c, t: p.t, code: p.code, ver: p.ver, time: p.time, n: count[key] }; });
-  return { ok: true, teams: teams, plans: plans, closed: String(getConf_('계획서마감') || ''), now: new Date().toISOString() };
+  return { ok: true, teams: teams, plans: plans, evals: evalRows_(), closed: String(getConf_('계획서마감') || ''), now: new Date().toISOString() };
 }
 
 function planHistory_(q) {
@@ -240,6 +252,86 @@ function planHistory_(q) {
   const list = plans_().filter(p => p.c === c && p.t === t)
     .map(p => ({ code: p.code, ver: p.ver, time: p.time, hidden: p.hidden, names: p.names }));
   return { ok: true, c: c, t: t, list: list.reverse() };
+}
+
+/* ---------------- 계획서 평가 (선생님 점수·메모·연습 기록) ----------------
+   키: plan|반|조  ·  exec|반|조|학생이름  ·  reps|반|조|작전번호(0~2)
+   rows: [{k, v}] — v가 null이면 그 줄을 지움 (이름이 바뀐 점수를 옮길 때) */
+function evalSet_(q) {
+  const k0 = keyCheck_(q.key); if (!k0.ok) return k0;
+  const rows = (Array.isArray(q.rows) ? q.rows : []).slice(0, 300);
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ensureSheet_(ss, SHEET_EVAL, EVAL_HEAD);
+    const v = sh.getDataRange().getValues(), at = {};
+    for (let i = 1; i < v.length; i++) if (String(v[i][0])) at[String(v[i][0])] = i + 1;
+    const now = new Date(), add = {}, del = [], done = [], bad = [];
+    rows.forEach(r => {
+      const k = String((r && r.k) || ''), p = k.split('|');
+      if (!/^(plan|exec|reps)$/.test(p[0]) || !(+p[1] > 0) || !(+p[2] > 0) || k.length > 60) { bad.push(k); return; }
+      if (r.v === null) { if (at[k]) del.push(at[k]); delete add[k]; done.push(k); return; }
+      const row = evalRow_(p, k, r.v, now); if (!row) { bad.push(k); return; }
+      if (at[k]) sh.getRange(at[k], 1, 1, row.length).setValues([row]); else add[k] = row;
+      done.push(k);
+    });
+    const news = Object.keys(add).map(k => add[k]);
+    if (news.length) sh.getRange(sh.getLastRow() + 1, 1, news.length, EVAL_HEAD.length).setValues(news);
+    del.sort((a, b) => b - a).forEach(r => sh.deleteRow(r));
+    return { ok: true, done: done, bad: bad, time: now.toISOString() };
+  } finally { lock.releaseLock(); }
+}
+
+function evalRow_(p, k, val, now) {
+  const c = +p[1], t = +p[2];
+  if (p[0] === 'plan') { const s = +val || 0; return [k, c, t, '계획서', '조', s || '', '', '', '', now]; }
+  if (p[0] === 'exec') {
+    const name = p.slice(3).join('|'); if (!name) return null;
+    const o = val || {}, s = +o.score || 0;
+    return [k, c, t, '실행', safe_(name, 20), s || '', safe_(o.memo, 300), !!o.only, '', now];
+  }
+  if (p[0] === 'reps') {
+    const i = +p[3]; if (!(i >= 0 && i <= 2)) return null;
+    const js = JSON.stringify(Array.isArray(val) ? val : []); if (js.length > MAX_REPS) return null;
+    return [k, c, t, '연습', '작전 ' + (i + 1), '', '', '', js, now];
+  }
+  return null;
+}
+
+function evalRows_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_EVAL); if (!sh) return [];
+  const v = sh.getDataRange().getValues(), out = [];
+  for (let i = 1; i < v.length; i++) {
+    const r = v[i], k = String(r[0]); if (!k) continue;
+    const kind = k.split('|')[0]; let val;
+    if (kind === 'plan') val = +r[5] || 0;
+    else if (kind === 'exec') val = { score: +r[5] || 0, memo: String(r[6] || ''), only: isTrue_(r[7]) };
+    else if (kind === 'reps') { try { val = JSON.parse(String(r[8] || '[]')); } catch (e) { val = []; } }
+    else continue;
+    out.push({ k: k, v: val, at: iso_(r[9]) });
+  }
+  return out;
+}
+
+/* 메뉴 [작전판 > 점수표 정리]: 제출한 조원 + 점수가 있는 학생을 반·조 순으로 */
+function buildScores() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const plan = {}, exec = {}, names = {};
+  const addName = (c, t, n) => { n = String(n || '').trim(); if (!n) return; const key = c + '|' + t; (names[key] = names[key] || []); if (names[key].indexOf(n) < 0) names[key].push(n); };
+  const latest = {}; plans_().forEach(p => { if (!p.hidden) latest[p.c + '|' + p.t] = p; });
+  Object.keys(latest).forEach(key => { const p = latest[key]; let o = null; try { o = JSON.parse(p.code); } catch (e) { }
+    ((o && Array.isArray(o.members)) ? o.members : String(p.members).split(',')).forEach(n => addName(p.c, p.t, n)); });
+  evalRows_().forEach(r => { const p = r.k.split('|'), key = p[1] + '|' + p[2];
+    if (p[0] === 'plan') plan[key] = r.v;
+    if (p[0] === 'exec') { const n = p.slice(3).join('|'); exec[key + '|' + n] = r.v; addName(+p[1], +p[2], n); } });
+  const keys = Object.keys(names).sort((a, b) => { const x = a.split('|').map(Number), y = b.split('|').map(Number); return x[0] - y[0] || x[1] - y[1]; });
+  const out = [['반', '조', '이름', '계획서(조)', '실행', '합계', '계획서만', '메모']];
+  keys.forEach(key => { const c = +key.split('|')[0], t = +key.split('|')[1], ps = plan[key] || 0;
+    names[key].forEach(n => { const e = exec[key + '|' + n] || {}, es = e.only ? 0 : (+e.score || 0);
+      out.push(['2-' + c, t, safe_(n, 20), ps || '', e.only ? '' : (es || ''), e.only ? '' : (ps && es ? ps + es : ''), e.only ? '○' : '', safe_(e.memo, 300)]); }); });
+  let sh = ss.getSheetByName(SHEET_SCORE); if (!sh) sh = ss.insertSheet(SHEET_SCORE);
+  sh.clearContents(); sh.getRange(1, 1, out.length, out[0].length).setValues(out); sh.setFrozenRows(1);
+  SpreadsheetApp.getUi().alert('점수표를 정리했어요. ' + (out.length - 1) + '명\n\n· 합계는 계획서와 실행 점수가 모두 있을 때만 적어요.\n· 계획서만 참여(○) 학생은 실행·합계를 비워 둬요. 학교 규정에 맞게 직접 넣어 주세요.');
 }
 
 /* ---------------- 확인 ---------------- */
